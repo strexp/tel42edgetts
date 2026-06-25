@@ -1,0 +1,196 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - arch_name: linux_amd64
+            goos: linux
+            goarch: amd64
+          - arch_name: linux_386
+            goos: linux
+            goarch: 386
+          - arch_name: linux_arm64
+            goos: linux
+            goarch: arm64
+          - arch_name: linux_riscv64
+            goos: linux
+            goarch: riscv64
+          - arch_name: linux_loong64
+            goos: linux
+            goarch: loong64
+          - arch_name: linux_mips64el
+            goos: linux
+            goarch: mips64le
+          - arch_name: linux_ppc64el
+            goos: linux
+            goarch: ppc64le
+          - arch_name: linux_s390x
+            goos: linux
+            goarch: s390x
+          - arch_name: linux_armhf
+            goos: linux
+            goarch: arm
+            goarm: "7"
+
+          # Windows
+          - arch_name: windows_amd64
+            goos: windows
+            goarch: amd64
+          - arch_name: windows_arm64
+            goos: windows
+            goarch: arm64
+          - arch_name: windows_386
+            goos: windows
+            goarch: 386
+
+          # Darwin (macOS)
+          - arch_name: darwin_amd64
+            goos: darwin
+            goarch: amd64
+          - arch_name: darwin_arm64
+            goos: darwin
+            goarch: arm64
+
+          # FreeBSD
+          - arch_name: freebsd_amd64
+            goos: freebsd
+            goarch: amd64
+          - arch_name: freebsd_arm64
+            goos: freebsd
+            goarch: arm64
+          - arch_name: freebsd_386
+            goos: freebsd
+            goarch: 386
+          - arch_name: freebsd_arm
+            goos: freebsd
+            goarch: arm
+            goarm: "7"
+          - arch_name: freebsd_riscv64
+            goos: freebsd
+            goarch: riscv64
+
+          # OpenBSD
+          - arch_name: openbsd_amd64
+            goos: openbsd
+            goarch: amd64
+          - arch_name: openbsd_arm64
+            goos: openbsd
+            goarch: arm64
+          - arch_name: openbsd_386
+            goos: openbsd
+            goarch: 386
+          - arch_name: openbsd_arm
+            goos: openbsd
+            goarch: arm
+            goarm: "7"
+
+          # NetBSD
+          - arch_name: netbsd_amd64
+            goos: netbsd
+            goarch: amd64
+          - arch_name: netbsd_arm64
+            goos: netbsd
+            goarch: arm64
+          - arch_name: netbsd_386
+            goos: netbsd
+            goarch: 386
+          - arch_name: netbsd_arm
+            goos: netbsd
+            goarch: arm
+            goarm: "7"
+
+          # DragonFly BSD
+          - arch_name: dragonfly_amd64
+            goos: dragonfly
+            goarch: amd64
+
+          # Solaris / Illumos
+          - arch_name: solaris_amd64
+            goos: solaris
+            goarch: amd64
+          - arch_name: illumos_amd64
+            goos: illumos
+            goarch: amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "stable"
+
+      - name: Build and Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          if [ -n "${{ matrix.goarm }}" ]; then
+            export GOARM=${{ matrix.goarm }}
+          fi
+
+          echo "Building for ${{ matrix.arch_name }} ($GOOS/$GOARCH)..."
+
+          APP_BIN="tel42edgetts"
+          if [ "$GOOS" = "windows" ]; then
+            APP_BIN="tel42edgetts.exe"
+          fi
+
+          make build VERSION=$VERSION APP_NAME=$APP_BIN
+
+          PKG_NAME="tel42edgetts_${VERSION}_${{ matrix.arch_name }}"
+          mkdir -p "dist/$PKG_NAME"
+          mv "$APP_BIN" "dist/$PKG_NAME/"
+
+          pushd dist > /dev/null
+
+          if [ "$GOOS" = "windows" ]; then
+            zip -r "${PKG_NAME}.zip" "$PKG_NAME"
+          else
+            tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+          fi
+          popd > /dev/null
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.arch_name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release packages
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
