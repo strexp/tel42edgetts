@@ -2,33 +2,37 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"os"
 
 	"tel42edgetts/internal/agi"
-	"tel42edgetts/internal/audio"
 	"tel42edgetts/internal/config"
+	"tel42edgetts/internal/core"
 	"tel42edgetts/internal/player"
-	"tel42edgetts/internal/tts"
 )
 
+// App represents the TTS application.
 type App struct {
-	session  *agi.Session
-	settings *config.Settings
-	player   *player.Player
+	session     agi.SessionInterface
+	settings    *config.Settings
+	player      *player.Player
+	synthesizer *core.Synthesizer
 }
 
-func NewApp(session *agi.Session, settings *config.Settings) *App {
+// NewApp creates a new App instance.
+func NewApp(session agi.SessionInterface, settings *config.Settings) *App {
 	return &App{
-		session:  session,
-		settings: settings,
-		player:   player.New(session),
+		session:     session,
+		settings:    settings,
+		player:      player.New(session),
+		synthesizer: core.NewSynthesizer(settings),
 	}
 }
 
+// Run executes the TTS application.
 func (a *App) Run() error {
 	a.logStart()
 
-	filePath, err := a.synthesizeAudio()
+	result, err := a.synthesizer.Synthesize()
 	if err != nil {
 		return err
 	}
@@ -36,15 +40,15 @@ func (a *App) Run() error {
 	a.session.SetStatus("SUCCESS")
 	a.session.DisableMusic()
 
-	result := a.playAudio(filePath)
+	playResult := a.playAudio(result.PathNoExt)
 
-	if result.Error != nil {
+	if playResult.Error != nil {
 		a.session.SetStatus("ERROR")
 	} else {
-		a.session.SetUserInput(result.UserInput)
+		a.session.SetUserInput(playResult.UserInput)
 	}
 
-	a.cleanup(filePath)
+	a.synthesizer.Cleanup(result.PathNoExt)
 
 	return nil
 }
@@ -63,58 +67,6 @@ func (a *App) logStart() {
 	)
 }
 
-func (a *App) synthesizeAudio() (string, error) {
-	voice := tts.ResolveVoice(a.settings.Lang, a.settings.Voice)
-	hash := audio.GenerateHash(a.settings.Text, a.settings.Lang, voice, a.settings.Format)
-
-	if !a.settings.Cache {
-		hash = fmt.Sprintf("%s_%d", hash, time.Now().UnixNano())
-	}
-
-	pathNoExt, fullPath := audio.GetPaths(a.settings.CacheDir, hash, a.settings.Format)
-
-	if a.settings.Cache && audio.Exists(fullPath) {
-		return pathNoExt, nil
-	}
-
-	mp3Data, err := tts.Download(a.settings.Text, voice)
-	if err != nil {
-		return "", fmt.Errorf("TTS download failed: %w", err)
-	}
-
-	if err := a.saveAudio(fullPath, mp3Data); err != nil {
-		return "", err
-	}
-
-	return pathNoExt, nil
-}
-
-func (a *App) saveAudio(filePath string, mp3Data []byte) error {
-	if a.settings.Format == "mp3" {
-		return a.saveMP3(filePath, mp3Data)
-	}
-	return a.saveWAV(filePath, mp3Data)
-}
-
-func (a *App) saveMP3(filePath string, mp3Data []byte) error {
-	if err := writeFile(filePath, mp3Data); err != nil {
-		return fmt.Errorf("failed to write MP3 file: %w", err)
-	}
-	return nil
-}
-
-func (a *App) saveWAV(filePath string, mp3Data []byte) error {
-	targetRate := 8000
-	if a.settings.Format == "wav16" {
-		targetRate = 16000
-	}
-
-	if err := audio.ConvertToWav(filePath, mp3Data, targetRate); err != nil {
-		return fmt.Errorf("failed to convert to WAV: %w", err)
-	}
-	return nil
-}
-
 func (a *App) playAudio(filePath string) player.Result {
 	ivrMode := player.Mode(a.settings.IVRMode)
 	if a.settings.IVR {
@@ -123,8 +75,69 @@ func (a *App) playAudio(filePath string) player.Result {
 	return a.player.Play(filePath, "", 0)
 }
 
-func (a *App) cleanup(filePath string) {
-	if !a.settings.Cache {
-		_ = removeFile(fmt.Sprintf("%s.%s", filePath, a.settings.Format))
+// CLIApp extends App with CLI-specific behavior.
+type CLIApp struct {
+	*App
+	cliPlayer *player.CLIPlayer
+}
+
+// NewCLIApp creates a new CLI app instance.
+func NewCLIApp(session *agi.MockSession, settings *config.Settings) *CLIApp {
+	baseApp := &App{
+		session:     session,
+		settings:    settings,
+		player:      player.New(session),
+		synthesizer: core.NewSynthesizer(settings),
 	}
+	return &CLIApp{
+		App:       baseApp,
+		cliPlayer: player.NewCLI(session, os.Stdout),
+	}
+}
+
+// Run executes the CLI TTS application.
+func (a *CLIApp) Run() error {
+	// Print CLI summary
+	ivrMode := player.Mode(a.settings.IVRMode)
+	a.cliPlayer.PrintSummary(
+		a.settings.Text,
+		a.settings.Lang,
+		a.settings.Voice,
+		a.settings.Format,
+		a.settings.Cache,
+		a.settings.IVR,
+		ivrMode,
+		a.settings.IVRTimeout,
+	)
+
+	// Log to AGI
+	a.logStart()
+
+	result, err := a.synthesizer.Synthesize()
+	if err != nil {
+		return err
+	}
+
+	// Print synthesis status
+	if result.Cached {
+		fmt.Printf("[CLI] Using cached file: %s\n", result.FullPath)
+	} else {
+		fmt.Printf("[CLI] Downloaded and saved: %s\n", result.FullPath)
+	}
+
+	a.session.SetStatus("SUCCESS")
+	a.session.DisableMusic()
+
+	playResult := a.playAudio(result.PathNoExt)
+
+	if playResult.Error != nil {
+		a.session.SetStatus("ERROR")
+	} else {
+		a.session.SetUserInput(playResult.UserInput)
+	}
+
+	a.cliPlayer.PrintResult(playResult)
+	a.synthesizer.Cleanup(result.PathNoExt)
+
+	return nil
 }

@@ -37,6 +37,7 @@ tel42edgetts [OPTIONS] [TEXT]
 - `-ivr`: Enable IVR mode - user input can interrupt playback (env: `TTS_IVR`).
 - `-ivr-mode`: IVR input mode: `single` (single digit) or `hash` (digits ending with #) (env: `TTS_IVR_MODE`, default: `single`).
 - `-ivr-timeout`: Timeout in milliseconds for waiting user input after playback completes (env: `TTS_IVR_TIMEOUT`, default: `5000`).
+- `-cli`: CLI test mode - mock AGI session for testing without Asterisk.
 - `-version`: Print version and exit.
 
 ### Environment Variables
@@ -68,6 +69,30 @@ The script exports the outcome under the following Asterisk channel variables:
 - `TTS_USERINPUT`: Contains the user input received during IVR mode (empty string if no input).
   - In `single` mode: contains the single digit pressed (during or after playback)
   - In `hash` mode: contains the digit string ending with `#` (or empty if timeout)
+
+### CLI Test Mode
+
+You can test the TTS and IVR functionality without Asterisk by using the `-cli` flag:
+
+```bash
+# Basic TTS test
+tel42edgetts -cli "Hello world"
+
+# Test with specific language and voice
+tel42edgetts -cli -lang zh-CN -voice Xiaoxiao "你好"
+
+# Test IVR single mode (user input from stdin)
+tel42edgetts -cli -ivr -ivr-mode single "Press a key"
+
+# Test IVR hash mode (enter digits ending with #)
+tel42edgetts -cli -ivr -ivr-mode hash "Enter your code"
+```
+
+In CLI test mode:
+- Audio files are still synthesized and saved to the cache directory
+- Playback is simulated with console output
+- IVR input is read from stdin (you type the digits)
+- All AGI variables are printed to console with `[MOCK AGI]` prefix
 
 ### Asterisk Usage
 

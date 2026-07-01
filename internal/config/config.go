@@ -24,6 +24,9 @@ type Settings struct {
 	IVR        bool
 	IVRMode    string
 	IVRTimeout int
+
+	// CLI test mode
+	CLIMode bool
 }
 
 // default values
@@ -57,6 +60,7 @@ func Parse() (*Settings, error) {
 	flag.BoolVar(&s.IVR, "ivr", envIVR, "Enable IVR mode - user input can interrupt playback (env: TTS_IVR)")
 	flag.StringVar(&s.IVRMode, "ivr-mode", envIVRMode, "IVR input mode: 'single' for single digit, 'hash' for digits ending with # (env: TTS_IVR_MODE)")
 	flag.IntVar(&s.IVRTimeout, "ivr-timeout", envIVRTimeout, "Timeout in milliseconds for waiting user input after playback (env: TTS_IVR_TIMEOUT)")
+	flag.BoolVar(&s.CLIMode, "cli", false, "CLI test mode - mock AGI session for testing without Asterisk")
 
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 
@@ -146,6 +150,9 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "\nAsterisk Dialplan Variables (Take Precedence over flags):\n")
 	fmt.Fprintf(os.Stderr, "  TTS_TEXT, TTS_LANG, TTS_VOICE, TTS_FORMAT, TTS_CACHE_DIR, TTS_CACHE\n")
 	fmt.Fprintf(os.Stderr, "  TTS_IVR, TTS_IVR_MODE, TTS_IVR_TIMEOUT, TTS_USERINPUT (output)\n")
+	fmt.Fprintf(os.Stderr, "\nCLI Test Mode:\n")
+	fmt.Fprintf(os.Stderr, "  Use -cli flag to run without Asterisk for testing.\n")
+	fmt.Fprintf(os.Stderr, "  In CLI mode, user input is read from stdin to simulate IVR.\n")
 	fmt.Fprintf(os.Stderr, "\n")
 }
 

@@ -6,6 +6,18 @@ import (
 	"github.com/zaf/agi"
 )
 
+// Reply wraps agi.Reply to implement our interfaces.
+type Reply struct {
+	Res int
+	Dat string
+}
+
+func (r Reply) GetRes() int    { return r.Res }
+func (r Reply) GetDat() string { return r.Dat }
+
+// Verify Session implements SessionInterface
+var _ SessionInterface = (*Session)(nil)
+
 // Session wraps an AGI session with helper methods.
 type Session struct {
 	*agi.Session
@@ -60,4 +72,31 @@ func (s *Session) DisableMusic() {
 func (s *Session) ExecPlayback(filePath string) error {
 	_, err := s.Exec("Playback", filePath)
 	return err
+}
+
+// GetData executes the GetData AGI command.
+func (s *Session) GetData(filePath string, timeoutMs, maxDigits int) (DataReply, error) {
+	reply, err := s.Session.GetData(filePath, timeoutMs, maxDigits)
+	if err != nil {
+		return nil, err
+	}
+	return Reply{Res: reply.Res, Dat: reply.Dat}, nil
+}
+
+// ControlStreamFile executes the ControlStreamFile AGI command.
+func (s *Session) ControlStreamFile(filePath, escapeDigits string) (ControlReply, error) {
+	reply, err := s.Session.ControlStreamFile(filePath, escapeDigits)
+	if err != nil {
+		return nil, err
+	}
+	return Reply{Res: reply.Res, Dat: reply.Dat}, nil
+}
+
+// WaitForDigit executes the WaitForDigit AGI command.
+func (s *Session) WaitForDigit(timeoutMs int) (DigitReply, error) {
+	reply, err := s.Session.WaitForDigit(timeoutMs)
+	if err != nil {
+		return nil, err
+	}
+	return Reply{Res: reply.Res, Dat: reply.Dat}, nil
 }
